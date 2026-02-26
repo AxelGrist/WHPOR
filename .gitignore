@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# ArcGIS
+*.gdb/
+*.aprx
+*.pagx
+*.lyrx
+*.atbx
+*.sd
+*.sde
+*.lock
+
+# Raster data
+*.tif
+*.tiff
+*.aux.xml
+
+# Logs
+*.log
+debug.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Large data folders (document location in README)
+source_data/bc25fill/
+source_data/bc25per2/
+source_data/2_FWA/
+source_data/FWA_BC.gdb/
+source_data/openpyxl/

@@ -177,6 +177,30 @@ Written by N Bouvier Modified by C Folkers
 
 Various Functions used throughout WHPOR analysis
 
+## Required Source Data
+
+The WHPOR scripts require several large data files that are not included in this repository due to size constraints. These files are located on the network drive:
+
+**Location:** `\\spatialfiles.bcgov\Work\for\RNI\RNI\Projects\WHPOR_Watershed_Analysis\working\source_data\`
+
+| File/Folder | Description | Size |
+|-------------|-------------|------|
+| `bc25fill/` | DEM raster (filled) | ~2.6 GB |
+| `bc25per2/` | DEM raster (percent slope) | ~1.5 GB |
+| `2_FWA/` | Freshwater Atlas data | ~756 MB |
+| `FWA_BC.gdb` | Freshwater Atlas geodatabase | ~161 MB |
+| `VRI_BNDY.gdb` | VRI boundary lookup tables (StreamWght_lookup) | ~19 MB |
+| `Maps50K.gdb` | 50K mapsheet grid | ~2 MB |
+| `WHPOR_APRX_Template_20230713/` | ArcGIS Pro map template | ~1 MB |
+| `Compiled_Watershed_Hazard_Summaries_Master8.xlsx` | Output spreadsheet template | ~2 MB |
+| `Layer_Master.xlsx` | Data layer configuration | <1 MB |
+| `Watershed_Inputs_List_V2.csv` | Watershed input parameters | <1 MB |
+| `BCCEF_Buffer_Distance_Table.csv` | Buffer distance lookup | <1 MB |
+| `Omineca_BEC_v12_Rating_Classification.csv` | BEC classification ratings | <1 MB |
+| `PCS_Albers.prj` | Projection file | <1 KB |
+
+Copy the entire `source_data` folder to your working location, or ensure your scripts point to the network path.
+
 # Further Work
 
 - Drought Risk Score- John Rex to guide
