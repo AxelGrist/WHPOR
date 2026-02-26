@@ -6,16 +6,6 @@ script created by: Cfolkers
 the purpose of this script is to create the WHPOR Project and run all assoicated scripts, currently there are 9 scripts and two modules. 
 all scripts need to be in the same folder  
 
-Four scripts for the data-preparation-kings under the sky,
-Four for the Analysis-lords in their halls of stone,
-One for mortal-deliverables doomed to provide,
-
-One for the Dark Lord on his dark throne
-In the Land of Mordor(Python) where the shadows lie.
-One Script to rule them all, one Script to find them,
-One Script to bring them all, and in the darkness run them;
-In the Land of Python where the shadows lie.
-
 '''
 
 
