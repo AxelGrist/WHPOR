@@ -1,6 +1,30 @@
 # Watershed Health Project: Omineca Region (WHPOR)
 
-**Requirements:**
+## Overview
+
+The **Watershed Health Project Omineca Region (WHPOR)** is a GIS-based watershed hazard assessment tool developed by the BC Ministry of Forests as part of the provincial Cumulative Effects Framework (CEF). It provides standardized relative hazard assessments across Watershed Assessment Units (WAU) for three key hazard types:
+
+### Hazard Types Assessed
+
+| Hazard | Description | Key Indicators |
+|--------|-------------|----------------|
+| **Streamflow Hazard** | Likelihood of increased peak flow, particularly during spring snowmelt | Equivalent Clearcut Area (ECA), BEC zone snow levels, drainage density, wetland/lake attenuation |
+| **Sediment Hazard** | Likelihood of increased sediment generation and delivery to streams | Road density, stream crossing density, roads on steep slopes, roads near streams, terrain stability, gentle-over-steep terrain |
+| **Riparian Hazard** | Likelihood of disturbance altering freshwater and terrestrial riparian attributes | Forest harvesting intrusion within 20m of streams, range tenures, private land parcels |
+
+### Key Concepts
+
+- **Equivalent Clearcut Area (ECA)**: Proportion of watershed with forest canopy disturbance (harvesting, wildfire, beetle kill) factored by hydrological recovery
+- **Watershed Assessment Units (WAU)**: Standardized areas of 2,000-10,000 ha (target 3,000 ha) emulating third-order watersheds at 1:50,000 scale
+- **Attenuation Potential**: Watershed's ability to buffer response at outlet based on wetlands, lakes, drainage density, and slope
+
+### Reference Documentation
+
+For the full methodology, see: [Current Condition Report for GIS-Based Watershed Hazard in the Omineca Region (Rex et al., 2022)](https://www2.gov.bc.ca/assets/gov/environment/natural-resource-stewardship/cumulative-effects/omineca-region/cef-ominecawatershedhazardassessment-ccr-2024.pdf)
+
+---
+
+## Requirements
 
 - Access to the OM NAS drive (\\\\142.27.147.234\\spatialfiles2work) mapped to N:
 - Access to the Geospatial GTS (ArcPro and Python 3)
@@ -40,11 +64,13 @@ Be aware that anything processed on the Temp drive will be removed once you sign
 
 ## Deliverables
 
-1x Compiled Spreadsheet
+| Output | Description |
+|--------|-------------|
+| **Compiled Spreadsheet** | Excel workbook with hazard scores for Named Watershed, Tributaries, and WAU tabs |
+| **PDF Map** | WHPOR Results Map showing hazard classifications |
+| **Geodatabase** | `Compiled_Watershed_Hazard_Summaries_rw.gdb` containing spatial polygon features with all hazard attributes (located in `1_SpatialData\3_ResultantData\`) |
 
-1x Pdf map
-
-Infrequently requested- shapes with spreadsheet data
+**Note:** The geodatabase contains the same data as the spreadsheet but with polygon geometry, allowing spatial visualization in ArcGIS. The `RevRepUni` field links spreadsheet rows to spatial features.
 
 ## Get Watershed Key
 
