@@ -1,4 +1,4 @@
-# WHPOR: Watershed Health Project Omineca Region
+# Watershed Health Project: Omineca Region (WHPOR)
 
 **Requirements:**
 
