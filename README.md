@@ -239,3 +239,15 @@ Copy the entire `source_data` folder to your working location, or ensure your sc
 - Automatic email to client
 - Replace wincom32 with something else. It needs the ability to activate formulas in the spreadsheet
 - Change Final ECA calcs from script 10 to script 7
+
+# Authors
+
+Original developers of the WHPOR scripts:
+
+- Mark McGirr - Original VRI programming
+- Will Burt - Original VRI programming  
+- Graham MacGregor - VRI2 script, CEA watershed analysis, overlap module (2012-2013)
+- Sasha Lees - VRI2 revisions, MPB criteria, coal lease scoring (2014)
+- Gail Smith - CEA watershed analysis (2013)
+- Noelle Bouvier - CEA modifications, geometry field flexibility (2021-2022)
+- C. Folkers - Python 3 migration, automation framework (2023)
