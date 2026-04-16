@@ -37,3 +37,12 @@ source_data/bc25per2/
 source_data/2_FWA/
 source_data/FWA_BC.gdb/
 source_data/openpyxl/
+
+# Local working/reference folders
+/documents/
+/release_notes/
+/source_data/
+/tools_archive/
+
+# Local guide drafts
+/WHPOR_Guide_v1.3.docx
