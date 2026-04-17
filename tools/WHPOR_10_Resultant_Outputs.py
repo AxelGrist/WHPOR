@@ -27,15 +27,23 @@ import sys
 import win32com.client as win32
 
 class Results:
-    def __init__(self, wtrshdname, Bfold):
+    def __init__(self, wtrshdname, Bfold, aoi_name=None, custom_aoi_path=None):
         self.wtrshdname=wtrshdname
         self.Bfold=Bfold
+        self.aoi_name=aoi_name
+        self.custom_aoi_path=custom_aoi_path
 
         #user Variables
         WatershedName=self.wtrshdname
         BaseFolder=self.Bfold
+        AOIName=self.aoi_name
+        CustomAOIPath=self.custom_aoi_path
+        CustomAOIUsed=CustomAOIPath not in [None, '']
+        OutputLabel=AOIName if CustomAOIUsed and AOIName not in [None, ''] else WatershedName
+        MapTitleName=OutputLabel
         #static variables
         watershedname=WatershedName.replace(' ','_')
+        outputlabel=OutputLabel.replace(' ','_')
         today=datetime.datetime.today().strftime(r'%Y%m%d')
         year=str(datetime.datetime.today().year)
         unq_fol=BaseFolder.split("\\")[-1]
@@ -47,13 +55,13 @@ class Results:
         rprtFolder=os.path.join(BaseFolder,r'2_Reports')
         # r'N:\FOR_RNI_RNI_Projects\WHPOR_Watershed_Analysis\1_WHPOR_Analyses\2023\6_Hominka\2_Reports'
         xlsTemplate=r'\\spatialfiles.bcgov\Work\for\RNI\RNI\Projects\WHPOR_Watershed_Analysis\working\source_data\Compiled_Watershed_Hazard_Summaries_Master8.xlsx'
-        tempname=(watershedname+r'_Compiled_Watershed_Hazard_Summaries_'+today+r'.xlsx')
+        tempname=(outputlabel+r'_Compiled_Watershed_Hazard_Summaries_'+today+r'.xlsx')
         report_out=os.path.join(rprtFolder,tempname)
-        report_out2=os.path.join(rprtFolder,(r'Compiled_Watershed_Hazard_Summaries_'+WatershedName+r'_JOINS.xlsx'))
+        report_out2=os.path.join(rprtFolder,(r'Compiled_Watershed_Hazard_Summaries_'+OutputLabel+r'_JOINS.xlsx'))
         aprxname=os.path.join(BaseFolder,r'1_SpatialData\1_InputData',(watershedname+'.aprx'))
         # aprxtemp=r'N:\FOR_RNI_RNI_Projects\WHPOR_Watershed_Analysis\!WHPOR_Stage\2_WHPOR_Resources\1_Templates_Utilities\2_APRX_Template\WHPOR_APRX_Template_20230713'
         aprxtemp=r'\\spatialfiles.bcgov\Work\for\RNI\RNI\Projects\WHPOR_Watershed_Analysis\working\source_data\WHPOR_APRX_Template_20230713\WHPOR_APRX_Template_20230713.aprx'
-        mapname=(WatershedName+r' WHPOR Results Map '+today+'.pdf')
+        mapname=(OutputLabel+r' WHPOR Results Map '+today+'.pdf')
         mapout=os.path.join(BaseFolder,r'3_Maps', mapname)
         arcpy.env.overwriteOutput = True
         clientdir=os.path.join(r'\\spatialfiles.bcgov\Work\for\RNI\RNI\Projects\WHPOR_Watershed_Analysis',year,unq_fol)
@@ -309,21 +317,24 @@ class Results:
         def rejoin (inp):
             arcpy.env.workspace =inp
             arcpy.env.overwriteOutput = True
-            nmw=arcpy.ListFeatureClasses('*Named*')
-            tribw=arcpy.ListFeatureClasses('*Tributaries*')
-            wauw=arcpy.ListFeatureClasses('*WAU*')
-            print(nmw, tribw, wauw)
-            for n in nmw:
-                if n.endswith('not_final'):
-                    nmw=n
+            nmw_list=arcpy.ListFeatureClasses('*Named*') or []
+            tribw_list=arcpy.ListFeatureClasses('*Tributaries*') or []
+            wauw_list=arcpy.ListFeatureClasses('*WAU*') or []
+            print(nmw_list, tribw_list, wauw_list)
+
+            def choose_not_final(fc_list):
+                for fc in fc_list:
+                    if fc.endswith('not_final'):
+                        return fc
+                if len(fc_list) > 0:
+                    return fc_list[0]
+                return None
+
+            nmw=choose_not_final(nmw_list)
+            tribw=choose_not_final(tribw_list)
+            wauw=choose_not_final(wauw_list)
             print(nmw)
-            for t in tribw:
-                if t.endswith('not_final'):
-                    tribw=t
             print(tribw)
-            for w in wauw:
-                if w.endswith('not_final'):
-                    wauw=w
             print(wauw)
             unq='RevRepUni'
             print(today)
@@ -332,7 +343,7 @@ class Results:
             wausht=os.path.join(report_out,r'T_Watershed_Assessment_Units$_')
 
             print(nmsht)
-            if arcpy.Exists(nmw):
+            if nmw and arcpy.Exists(nmw):
                 unq1=[f.name for f in arcpy.ListFields(nmw,'*RevRepuni')][0]
                 print(unq1)
                 arcpy.management.ValidateJoin(nmw,unq1,nmsht,unq )
@@ -342,7 +353,7 @@ class Results:
                 print('new named')
                 arcpy.management.Delete(nmw)
 
-            if arcpy.Exists(tribw):
+            if tribw and arcpy.Exists(tribw):
                 unq2=[f.name for f in arcpy.ListFields(tribw,'*RevRepuni')][0]
                 print(unq2)
                 arcpy.management.ValidateJoin(tribw,unq2,trbsht,unq )
@@ -351,8 +362,10 @@ class Results:
                 arcpy.management.CopyFeatures(trib_watershed,('Compiled_Watershed_Features_Tributaries_'+str(today)))
                 print('new trib')
                 arcpy.management.Delete(tribw)
+            else:
+                print('No tributary not_final feature class found; skipping tributary rejoin')
 
-            if arcpy.Exists(wauw):
+            if wauw and arcpy.Exists(wauw):
                 unq3=[f.name for f in arcpy.ListFields(wauw,'*RevRepuni')][0]
                 print(unq3)
                 arcpy.management.ValidateJoin(wauw,unq3,wausht,unq )
@@ -371,9 +384,15 @@ class Results:
             print(tribdel)
             print(waudel)
             print(aois)
-            arcpy.management.Delete(nmdel[0])
-            arcpy.management.Delete(tribdel[0])
-            arcpy.management.Delete(waudel[0])
+
+            if len(nmdel) > 0:
+                arcpy.management.Delete(nmdel[0])
+            if len(tribdel) > 0:
+                arcpy.management.Delete(tribdel[0])
+            else:
+                print('No tributary feature class found in cleanup; skipping delete')
+            if len(waudel) > 0:
+                arcpy.management.Delete(waudel[0])
             for a in aois:
                 arcpy.management.Delete(a)
             print('REJOIN, FINAL Feature class Created')
@@ -488,7 +507,7 @@ class Results:
             mfrm=lyout.listElements("MAPFRAME_ELEMENT")[0]
             
             title=lyout.listElements('TEXT_ELEMENT','Title')[0]
-            title.text=WatershedName+':\nWHPOR Results'
+            title.text=MapTitleName+':\nWHPOR Results'
             # scale=int(mfrm.camera.scale)
             scaleBar = lyout.listElements("MAPSURROUND_ELEMENT", 'Alternating Scale Bar')[0]
             print('Title updated')
@@ -730,13 +749,13 @@ class Results:
             if not os.path.exists(final_location):
                 os.makedirs(final_location)
 
-            map_nm_like=(WatershedName+r' WHPOR Results Map '+str(year))
+            map_nm_like=(OutputLabel+r' WHPOR Results Map '+str(year))
             for root, dirs,files in os.walk(os.path.join(BaseFolder,r'3_Maps')):
                 for file in files:
                     if file.startswith(map_nm_like):
                         shutil.copy(mapout,os.path.join(final_location,mapname))
             
-            rprt_nm_like=(watershedname+r'_Compiled_Watershed_Hazard_Summaries_'+str(year))
+            rprt_nm_like=(outputlabel+r'_Compiled_Watershed_Hazard_Summaries_'+str(year))
             for root, dirs,files in os.walk(rprtFolder):
                 for file in files:
                     if file.startswith(rprt_nm_like):

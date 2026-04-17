@@ -279,25 +279,55 @@ class VRI2:
 
         # AOI Units.
         print ('Listing AOI units')
-        rows = arcpy.SearchCursor(sAOIfeat)
-        row = rows.next()
-        while row:
-            aoiList.append(row.getValue(sField))
-            row = rows.next()
-        del row, rows
+
+        available_fields = {f.name.upper(): f.name for f in arcpy.ListFields(sAOIfeat)}
+        key_candidates = [sField, 'AOI_Tile', 'Assess_Uni', 'WATERSHED_KEY', 'GNIS_NAME', 'FWA_WATERSHED_CODE']
+        resolved_field = None
+        for candidate in key_candidates:
+            lookup = available_fields.get(candidate.upper())
+            if lookup is not None:
+                resolved_field = lookup
+                break
+
+        if resolved_field is None:
+            resolved_field = arcpy.Describe(sAOIfeat).OIDFieldName
+            print('AOI key field not found in schema. Falling back to OID field:', resolved_field)
+        else:
+            print('Using AOI key field:', resolved_field)
+
+        seen_units = set()
+        with arcpy.da.SearchCursor(sAOIfeat, [resolved_field]) as cursor:
+            for row in cursor:
+                value = row[0]
+                if value in [None, '']:
+                    continue
+                value_str = str(value)
+                if value_str not in seen_units:
+                    seen_units.add(value_str)
+                    aoiList.append(value_str)
+
+        if len(aoiList) == 0:
+            aoiList = ['1']
+            print('No AOI unit values found; defaulting AOI list to a single unit')
 
         print ("This many VRI areas will be extracted " + str(len(aoiList)))
         for aoiNumber in aoiList:
             print(aoiNumber)
             # extracts out Area of interest tile
             if aoiNumber == None:
-                aoiNumber==1
+                aoiNumber=1
             varSQL = str(aoiNumber)
             varName = f"a_{str(aoiNumber)}"
-            # selText = f"{sField} = {varSQL}"
+            field_object = arcpy.ListFields(sAOIfeat, resolved_field)[0]
+            field_delim = arcpy.AddFieldDelimiters(sAOIfeat, resolved_field)
+            if field_object.type in ['String', 'Guid']:
+                safe_value = varSQL.replace("'", "''")
+                selText = f"{field_delim} = '{safe_value}'"
+            else:
+                selText = f"{field_delim} = {varSQL}"
             print(sAOIfeat)
-            # print(selText)
-            arcpy.MakeFeatureLayer_management(sAOIfeat, "LuLyr") #selText
+            print(selText)
+            arcpy.MakeFeatureLayer_management(sAOIfeat, "LuLyr", selText)
             print(f"{varName}_bnd")
             aoiBnd = arcpy.CopyFeatures_management("LuLyr", f"{varName}_bnd")
             arcpy.MakeFeatureLayer_management(f"{varName}_bnd", "luAOI")

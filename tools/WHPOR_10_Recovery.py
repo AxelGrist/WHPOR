@@ -8,6 +8,8 @@
 |   Usage:                                                                                                 |
 |       from WHPOR_10_Recovery import RecoverResults                                                       |
 |       RecoverResults("Stuart River", r"T:\WHPOR_Temp\Stuart_River")                                      |
+|       RecoverResults("Stuart River", r"T:\WHPOR_Temp\Stuart_River", "Stuart River AOI")                 |
+|       RecoverResults("Stuart River", r"T:\WHPOR_Temp\Stuart_River", "Stuart River AOI", r"T:\...\AOI") |
 =============================================================================================================
 '''
 import arcpy
@@ -17,16 +19,24 @@ import datetime
 import math 
 
 class RecoverResults:
-    def __init__(self, wtrshdname, Bfold):
+    def __init__(self, wtrshdname, Bfold, aoi_name=None, custom_aoi_path=None):
         self.wtrshdname = wtrshdname
         self.Bfold = Bfold
+        self.aoi_name = aoi_name
+        self.custom_aoi_path = custom_aoi_path
 
         # User Variables
         WatershedName = self.wtrshdname
         BaseFolder = self.Bfold
+        AOIName = self.aoi_name
+        CustomAOIPath = self.custom_aoi_path
+        CustomAOIUsed = CustomAOIPath not in [None, '']
+        OutputLabel = AOIName if CustomAOIUsed and AOIName not in [None, ''] else WatershedName
+        MapTitleName = OutputLabel
         
         # Static variables  
         watershedname = WatershedName.replace(' ', '_')
+        outputlabel = OutputLabel.replace(' ', '_')
         today = datetime.datetime.today().strftime(r'%Y%m%d')
         year = str(datetime.datetime.today().year)
         unq_fol = BaseFolder.split("\\")[-1]
@@ -37,9 +47,9 @@ class RecoverResults:
         aprxname = os.path.join(BaseFolder, r'1_SpatialData\1_InputData', (watershedname + '.aprx'))
         aprxtemp = r'\\spatialfiles.bcgov\Work\for\RNI\RNI\Projects\WHPOR_Watershed_Analysis\working\source_data\WHPOR_APRX_Template_20230713\WHPOR_APRX_Template_20230713.aprx'
         
-        mapname = (WatershedName + r' WHPOR Results Map ' + today + '.pdf')
+        mapname = (OutputLabel + r' WHPOR Results Map ' + today + '.pdf')
         mapout = os.path.join(BaseFolder, r'3_Maps', mapname)
-        tempname = (watershedname + r'_Compiled_Watershed_Hazard_Summaries_' + today + r'.xlsx')
+        tempname = (outputlabel + r'_Compiled_Watershed_Hazard_Summaries_' + today + r'.xlsx')
         report_out = os.path.join(rprtFolder, tempname)
         
         arcpy.env.overwriteOutput = True
@@ -162,7 +172,7 @@ class RecoverResults:
             mfrm = lyout.listElements("MAPFRAME_ELEMENT")[0]
             
             title = lyout.listElements('TEXT_ELEMENT', 'Title')[0]
-            title.text = WatershedName + ':\nWHPOR Results'
+            title.text = MapTitleName + ':\nWHPOR Results'
             scaleBar = lyout.listElements("MAPSURROUND_ELEMENT", 'Alternating Scale Bar')[0]
             print('Title updated')
 
@@ -420,13 +430,13 @@ class RecoverResults:
             if not os.path.exists(final_location):
                 os.makedirs(final_location)
 
-            map_nm_like = (WatershedName + r' WHPOR Results Map ' + str(year))
+            map_nm_like = (OutputLabel + r' WHPOR Results Map ' + str(year))
             for root, dirs, files in os.walk(os.path.join(BaseFolder, r'3_Maps')):
                 for file in files:
                     if file.startswith(map_nm_like):
                         shutil.copy(mapout, os.path.join(final_location, mapname))
             
-            rprt_nm_like = (watershedname + r'_Compiled_Watershed_Hazard_Summaries_' + str(year))
+            rprt_nm_like = (outputlabel + r'_Compiled_Watershed_Hazard_Summaries_' + str(year))
             for root, dirs, files in os.walk(rprtFolder):
                 for file in files:
                     if file.startswith(rprt_nm_like):
@@ -465,8 +475,10 @@ if __name__ == "__main__":
     # Change these values to match your failed run
     watershed_name = "Stuart River"
     base_folder = r"T:\WHPOR_Temp\Stuart_River"
+    aoi_name = watershed_name
+    custom_aoi_path = None
     
     print("Starting WHPOR Module 10 Recovery...")
     print("Make sure ArcGIS Pro is CLOSED!\n")
     
-    RecoverResults(watershed_name, base_folder)
+    RecoverResults(watershed_name, base_folder, aoi_name, custom_aoi_path)

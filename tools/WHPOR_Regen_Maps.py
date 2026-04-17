@@ -18,7 +18,10 @@ import math
 BASE_PATH = r"W:\FOR\RNI\RNI\Projects\WHPOR_Watershed_Analysis\2026\JPRF"
 ZOOM_OUT_FACTOR = 1.10  # 10% zoom out (increase scale by 10%)
 
-# Watersheds to process - tuple of (folder_name, display_name)
+# Watersheds to process
+# Tuple formats supported:
+#   (folder_name, watershed_name)
+#   (folder_name, watershed_name, aoi_name, custom_aoi_used)
 WATERSHEDS = [
     ("Babine_River", "Babine River"),
     ("Kilner_Creek", "Kilner Creek"),
@@ -26,11 +29,12 @@ WATERSHEDS = [
     ("Stuart_River", "Stuart River"),
 ]
 
-def regenerate_map(folder_name, watershed_name):
+def regenerate_map(folder_name, watershed_name, aoi_name=None, custom_aoi_used=False):
     """Regenerate a single watershed map with zoom-out fix"""
+    output_label = aoi_name if custom_aoi_used and aoi_name not in [None, ''] else watershed_name
     
     print("=" * 70)
-    print(f"Processing: {watershed_name}")
+    print(f"Processing: {output_label}")
     print("=" * 70)
     
     # Build paths
@@ -81,7 +85,7 @@ def regenerate_map(folder_name, watershed_name):
     title_elements = lyout.listElements('TEXT_ELEMENT', 'Title')
     if title_elements:
         title = title_elements[0]
-        title.text = f"{watershed_name}:\nWHPOR Results"
+        title.text = f"{output_label}:\nWHPOR Results"
         print(f"  Title updated")
     
     # Zoom to watershed AOI
@@ -155,7 +159,7 @@ def regenerate_map(folder_name, watershed_name):
     
     # Generate output filename with today's date
     today = datetime.datetime.today().strftime('%Y%m%d')
-    map_filename = f"{watershed_name} WHPOR Results Map {today}.pdf"
+    map_filename = f"{output_label} WHPOR Results Map {today}.pdf"
     map_path = os.path.join(maps_folder, map_filename)
     
     # Export PDF
@@ -190,9 +194,20 @@ def main():
     arcpy.env.overwriteOutput = True
     
     results = []
-    for folder_name, watershed_name in WATERSHEDS:
-        success = regenerate_map(folder_name, watershed_name)
-        results.append((watershed_name, success))
+    for item in WATERSHEDS:
+        if len(item) == 2:
+            folder_name, watershed_name = item
+            aoi_name = watershed_name
+            custom_aoi_used = False
+        elif len(item) == 4:
+            folder_name, watershed_name, aoi_name, custom_aoi_used = item
+        else:
+            print(f"  [WARNING] Invalid WATERSHEDS entry, skipping: {item}")
+            continue
+
+        output_label = aoi_name if custom_aoi_used and aoi_name not in [None, ''] else watershed_name
+        success = regenerate_map(folder_name, watershed_name, aoi_name, custom_aoi_used)
+        results.append((output_label, success))
     
     # Summary
     print("\n" + "=" * 70)
