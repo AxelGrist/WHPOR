@@ -173,7 +173,6 @@ class RecoverResults:
             
             title = lyout.listElements('TEXT_ELEMENT', 'Title')[0]
             title.text = MapTitleName + ':\nWHPOR Results'
-            scaleBar = lyout.listElements("MAPSURROUND_ELEMENT", 'Alternating Scale Bar')[0]
             print('Title updated')
 
             # Zoom to watershed AOI
@@ -183,8 +182,6 @@ class RecoverResults:
             mfrm.camera.setExtent(mfrm.getLayerExtent(named_map_lyrs[0]))
             scale = int(mfrm.camera.scale)
             arcpy.SelectLayerByAttribute_management(named_map_lyrs[0], "CLEAR_SELECTION")
-            print(scale)
-            print(len(str(scale)))
             
             # Round map scale 
             if len(str(scale)) == 4:
@@ -251,6 +248,19 @@ class RecoverResults:
             except Exception as e:
                 print('Scale bar style apply skipped:', e)
 
+            # Ensure we use the live map-frame scale in case ArcGIS adjusted it during style updates.
+            try:
+                mfrm.camera.scale = int(final_scale)
+            except Exception:
+                pass
+            try:
+                scale_for_bar = float(mfrm.camera.scale)
+            except Exception:
+                scale_for_bar = float(final_scale)
+            if scale_for_bar <= 0:
+                scale_for_bar = float(final_scale)
+            print('Scale used for scale bar calculations:', round(scale_for_bar, 3))
+
             frame_left = mfrm.elementPositionX
             frame_bottom = mfrm.elementPositionY
             frame_right = frame_left + mfrm.elementWidth
@@ -289,21 +299,69 @@ class RecoverResults:
             max_allowed_width = max(0.8, label_safe_right - left_limit)
             target_width = max(0.8, mfrm.elementWidth * 0.35)
             desired_width = min(target_width, max_allowed_width)
-            target_total_km = max(0.2, (final_scale * desired_width * 0.0254) / 1000.0)
+            target_total_km = max(0.2, (scale_for_bar * desired_width * 0.0254) / 1000.0)
             division_km = max(0.05, target_total_km / 4.0)
+
+            # Adaptive units: switch to meters for small extents to avoid 0,0,0,0,1 km labels.
+            use_meters = (target_total_km < 1.0) or (division_km < 0.25)
+            if use_meters:
+                meter_div_raw = division_km * 1000.0
+                meter_div_candidates = [10, 20, 25, 50, 100, 200, 250, 500, 1000]
+                unit_label = 'm'
+                unit_wkid = 9001
+                unit_name = 'Meters'
+                unit_to_m = 1.0
+                raw_division = meter_div_raw
+            else:
+                km_div_candidates = [0.05, 0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10]
+                unit_label = 'km'
+                unit_wkid = 9036
+                unit_name = 'Kilometers'
+                unit_to_m = 1000.0
+                raw_division = division_km
+
+            division_candidates = meter_div_candidates if use_meters else km_div_candidates
+            candidate_choices = []
+            for candidate in division_candidates:
+                candidate_width = (candidate * 4.0 * unit_to_m) / (scale_for_bar * 0.0254)
+                if candidate_width <= (max_allowed_width + 0.001):
+                    candidate_choices.append((abs(candidate_width - target_width), abs(candidate - raw_division), candidate, candidate_width))
+
+            if len(candidate_choices) > 0:
+                candidate_choices.sort(key=lambda x: (x[0], x[1]))
+                _, _, division_value, desired_width = candidate_choices[0]
+            else:
+                division_value = division_candidates[0]
+                desired_width = (division_value * 4.0 * unit_to_m) / (scale_for_bar * 0.0254)
+
+            desired_width = max(0.8, min(max_allowed_width, desired_width))
+
+            if use_meters:
+                rounding_value = 1
+            elif division_value >= 1:
+                rounding_value = 1
+            elif division_value >= 0.1:
+                rounding_value = 0.1
+            else:
+                rounding_value = 0.01
+
+            print('Scale bar adaptive units:', unit_label, 'division=', round(division_value, 3), 'target_total_km=', round(target_total_km, 3), 'width=', round(desired_width, 3))
 
             # Keep a visible alternating pattern and prevent width auto-growth.
             try:
                 scalebar_cim = scaleBar.getDefinition('V3')
                 if hasattr(scalebar_cim, 'fittingStrategy'):
                     try:
-                        scalebar_cim.fittingStrategy = 'AdjustDivision'
+                        scalebar_cim.fittingStrategy = 'AdjustFrame'
                     except Exception:
-                        scalebar_cim.fittingStrategy = 0
+                        try:
+                            scalebar_cim.fittingStrategy = 'AdjustDivision'
+                        except Exception:
+                            pass
                 if hasattr(scalebar_cim, 'divisions'):
                     scalebar_cim.divisions = 4
                 if hasattr(scalebar_cim, 'division'):
-                    scalebar_cim.division = division_km
+                    scalebar_cim.division = division_value
                 if hasattr(scalebar_cim, 'subdivisions'):
                     scalebar_cim.subdivisions = 0
                 if hasattr(scalebar_cim, 'labelFrequency'):
@@ -330,12 +388,15 @@ class RecoverResults:
                     scalebar_cim.unitLabelGap = 1.5
                 if hasattr(scalebar_cim, 'units'):
                     try:
-                        scalebar_cim.units = {'uwkid': 9036}
+                        scalebar_cim.units = {'uwkid': unit_wkid}
                     except Exception:
                         try:
-                            scalebar_cim.units = {'wkid': 9036}
+                            scalebar_cim.units = {'wkid': unit_wkid}
                         except Exception:
-                            pass
+                            try:
+                                scalebar_cim.units = unit_name
+                            except Exception:
+                                pass
                 if hasattr(scalebar_cim, 'showLabels'):
                     scalebar_cim.showLabels = True
                 if hasattr(scalebar_cim, 'showDivisionLabels'):
@@ -347,7 +408,7 @@ class RecoverResults:
                 if hasattr(scalebar_cim, 'showUnitLabel'):
                     scalebar_cim.showUnitLabel = True
                 if hasattr(scalebar_cim, 'unitLabel'):
-                    scalebar_cim.unitLabel = 'km'
+                    scalebar_cim.unitLabel = unit_label
                 if hasattr(scalebar_cim, 'unitLabelPosition'):
                     try:
                         scalebar_cim.unitLabelPosition = 'AfterBar'
@@ -358,12 +419,7 @@ class RecoverResults:
                         scalebar_cim.labelSymbol = scalebar_cim.unitLabelSymbol
                 if hasattr(scalebar_cim, 'numberFormat') and scalebar_cim.numberFormat:
                     if hasattr(scalebar_cim.numberFormat, 'roundingValue'):
-                        if division_km >= 1:
-                            scalebar_cim.numberFormat.roundingValue = 1
-                        elif division_km >= 0.1:
-                            scalebar_cim.numberFormat.roundingValue = 0.1
-                        else:
-                            scalebar_cim.numberFormat.roundingValue = 0.01
+                        scalebar_cim.numberFormat.roundingValue = rounding_value
                 if hasattr(scalebar_cim, 'labelPosition'):
                     try:
                         scalebar_cim.labelPosition = 'Above'
@@ -377,7 +433,19 @@ class RecoverResults:
                 ]
                 print('Scale bar CIM label props available:', available_label_props)
                 scaleBar.setDefinition(scalebar_cim)
-                print('Scale bar divisions, fitting strategy, and labels set (division_km=', round(division_km, 3), ')')
+                print('Scale bar divisions, fitting strategy, and labels set (division=', round(division_value, 3), unit_label, ')')
+                try:
+                    applied_cim = scaleBar.getDefinition('V3')
+                    print(
+                        'Scale bar readback after initial apply:',
+                        'fit=', getattr(applied_cim, 'fittingStrategy', 'n/a'),
+                        'divisions=', getattr(applied_cim, 'divisions', 'n/a'),
+                        'division=', getattr(applied_cim, 'division', 'n/a'),
+                        'subdivisions=', getattr(applied_cim, 'subdivisions', 'n/a'),
+                        'units=', getattr(applied_cim, 'units', 'n/a')
+                    )
+                except Exception as readback_e:
+                    print('Scale bar readback after initial apply skipped:', readback_e)
             except Exception as e:
                 print('Scale bar division update skipped:', e)
 
@@ -401,7 +469,62 @@ class RecoverResults:
                 scaleBar.elementWidth = max(0.8, scaleBar.elementPositionX - left_limit)
                 left_edge = scaleBar.elementPositionX - scaleBar.elementWidth
 
+            # Re-apply division after final width clamp so ArcGIS does not auto-adjust to non-candidate values.
+            try:
+                final_cim = scaleBar.getDefinition('V3')
+                if hasattr(final_cim, 'fittingStrategy'):
+                    try:
+                        final_cim.fittingStrategy = 'AdjustFrame'
+                    except Exception:
+                        try:
+                            final_cim.fittingStrategy = 'AdjustDivision'
+                        except Exception:
+                            pass
+                if hasattr(final_cim, 'divisions'):
+                    final_cim.divisions = 4
+                if hasattr(final_cim, 'division'):
+                    final_cim.division = division_value
+                if hasattr(final_cim, 'subdivisions'):
+                    final_cim.subdivisions = 0
+                if hasattr(final_cim, 'units'):
+                    try:
+                        final_cim.units = {'uwkid': unit_wkid}
+                    except Exception:
+                        try:
+                            final_cim.units = {'wkid': unit_wkid}
+                        except Exception:
+                            try:
+                                final_cim.units = unit_name
+                            except Exception:
+                                pass
+                if hasattr(final_cim, 'unitLabel'):
+                    final_cim.unitLabel = unit_label
+                if hasattr(final_cim, 'numberFormat') and final_cim.numberFormat:
+                    if hasattr(final_cim.numberFormat, 'roundingValue'):
+                        final_cim.numberFormat.roundingValue = rounding_value
+                scaleBar.setDefinition(final_cim)
+                print('Scale bar final division lock applied:', round(division_value, 3), unit_label)
+                try:
+                    final_readback_cim = scaleBar.getDefinition('V3')
+                    print(
+                        'Scale bar final readback:',
+                        'fit=', getattr(final_readback_cim, 'fittingStrategy', 'n/a'),
+                        'divisions=', getattr(final_readback_cim, 'divisions', 'n/a'),
+                        'division=', getattr(final_readback_cim, 'division', 'n/a'),
+                        'subdivisions=', getattr(final_readback_cim, 'subdivisions', 'n/a'),
+                        'units=', getattr(final_readback_cim, 'units', 'n/a')
+                    )
+                except Exception as readback_e:
+                    print('Scale bar final readback skipped:', readback_e)
+            except Exception as e:
+                print('Scale bar final division lock skipped:', e)
+
             print('Scale bar constrained to frame: left', round(left_edge, 3), 'right', round(scaleBar.elementPositionX, 3), 'target_right', round(right_limit, 3), 'frame_right', round(frame_right - right_margin, 3), 'width', round(scaleBar.elementWidth, 3))
+            try:
+                mfrm.camera.scale = int(final_scale)
+                print('Map frame scale re-applied before export:', int(mfrm.camera.scale))
+            except Exception as e:
+                print('Map frame scale re-apply skipped:', e)
             
             try:
                 print(f"Attempting to save .aprx file at: {aprx.filePath}")
