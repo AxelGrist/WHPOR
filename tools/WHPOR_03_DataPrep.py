@@ -15,11 +15,12 @@ import sys
 # import WHPOR_Fully_Loaded as WHPOR
 
 class DataPrep:
-    def __init__(self, wtrshdname, Bfold, username, password):
+    def __init__(self, wtrshdname, Bfold, username, password, custom_aoi=None):
         self.wtrshdname=wtrshdname
         self.Bfold=Bfold
         self.username=username
         self.password=password
+        self.custom_aoi=custom_aoi
 
         #user Variables
         WatershedName= self.wtrshdname     #WHPOR.OG_WatershedName
@@ -72,25 +73,58 @@ class DataPrep:
                 if '_Tributaries' in fc:
                     arcpy.conversion.FeatureClassToFeatureClass(in_features=fc, out_path=aoi_fgdb, out_name=fc) 
 
+        if 'named_watershed_file' not in locals():
+            raise RuntimeError('No *_Named_Watershed feature class found. Run Module 01 first.')
 
-        with arcpy.da.SearchCursor(named_watershed_file, ['FWA_WATERSHED_CODE','GNIS_NAME']) as cursor:
-            for row in cursor:
-                fwa_watershed_code = row[0]
-                gnis_name = row[1]
-        print(fwa_watershed_code, gnis_name)
+        gnis_name = WatershedName
+        fwa_watershed_code = None
+        code_sql = None
+        use_spatial_wau_select = True
+        custom_aoi_mode = self.custom_aoi not in [None, '']
 
-        code_split_list = fwa_watershed_code.split("-")
-        code_join_list = []
+        named_field_lookup = {f.name.upper(): f.name for f in arcpy.ListFields(named_watershed_file)}
+        code_field_name = named_field_lookup.get('FWA_WATERSHED_CODE')
+        gnis_field_name = named_field_lookup.get('GNIS_NAME')
 
+        cursor_fields = []
+        if code_field_name:
+            cursor_fields.append(code_field_name)
+        if gnis_field_name:
+            cursor_fields.append(gnis_field_name)
 
+        if cursor_fields:
+            with arcpy.da.SearchCursor(named_watershed_file, cursor_fields) as cursor:
+                for row in cursor:
+                    row_index = 0
+                    if code_field_name:
+                        fwa_watershed_code = row[row_index]
+                        row_index += 1
+                    if gnis_field_name and row[row_index] not in [None, '']:
+                        gnis_name = row[row_index]
+                    break
 
-        for code in code_split_list:
-            if int(code) != 0:
-                code_join_list.append(code)
+        if custom_aoi_mode:
+            gnis_name = WatershedName
+            use_spatial_wau_select = True
+            print('Using AOI spatial selection for WAUs (custom AOI mode)')
+        elif fwa_watershed_code not in [None, '', 'CUSTOM_AOI']:
+            code_split_list = str(fwa_watershed_code).split("-")
+            code_join_list = []
 
-        code_string = '-'.join(code_join_list)
-        code_sql = "FWA_WATERSHED_CODE LIKE '" + code_string + "%'"
-        print(code_sql)
+            for code in code_split_list:
+                clean_code = str(code).strip()
+                if clean_code not in ['', '0']:
+                    code_join_list.append(clean_code)
+
+            if len(code_join_list) > 0:
+                code_string = '-'.join(code_join_list)
+                code_sql = "FWA_WATERSHED_CODE LIKE '" + code_string + "%'"
+                use_spatial_wau_select = False
+                print('Using FWA watershed-code query for WAUs:', code_sql)
+            else:
+                print('No valid watershed-code parts found; using AOI spatial selection for WAUs')
+        else:
+            print('Using AOI spatial selection for WAUs (custom/missing FWA watershed code)')
 
 
 
@@ -129,11 +163,98 @@ class DataPrep:
                                                     
             return
         #Call Fucntion from Above
-        bcgw_Feature_Layer(object_name = 'WHSE_BASEMAPPING.FWA_ASSESSMENT_WATERSHEDS_POLY',
-                        sql = code_sql,
-                        out_name = wau_watershed_file,
-                        aoi_layer = None,
-                        relationship = None)
+        if use_spatial_wau_select:
+            bcgw_Feature_Layer(object_name = 'WHSE_BASEMAPPING.FWA_ASSESSMENT_WATERSHEDS_POLY',
+                            sql = None,
+                            out_name = wau_watershed_file,
+                            aoi_layer = named_watershed_file,
+                            relationship = 'INTERSECT')
+        else:
+            bcgw_Feature_Layer(object_name = 'WHSE_BASEMAPPING.FWA_ASSESSMENT_WATERSHEDS_POLY',
+                            sql = code_sql,
+                            out_name = wau_watershed_file,
+                            aoi_layer = None,
+                            relationship = None)
+
+        # Ensure all watershed-unit types are clipped to AOI before analysis.
+        def clip_to_aoi(in_fc, aoi_fc):
+            if not arcpy.Exists(in_fc):
+                print(f'{in_fc} not found, skipping AOI clip')
+                return
+            clip_out = in_fc + '_CLIP_TMP'
+            if arcpy.Exists(clip_out):
+                arcpy.management.Delete(clip_out)
+            arcpy.analysis.Clip(in_fc, aoi_fc, clip_out)
+            arcpy.management.Delete(in_fc)
+            arcpy.management.Rename(clip_out, in_fc)
+            print(f'Clipped to AOI: {in_fc}')
+
+        def apply_small_first_priority(in_fc, min_area_m2=1.0):
+            if not arcpy.Exists(in_fc):
+                print(f'{in_fc} not found, skipping nested-priority step')
+                return
+
+            attr_fields = [f.name for f in arcpy.ListFields(in_fc) if f.type not in ('OID', 'Geometry') and f.editable]
+            read_fields = ['OID@', 'SHAPE@'] + attr_fields
+            feat_rows = []
+
+            with arcpy.da.SearchCursor(in_fc, read_fields) as cursor:
+                for row in cursor:
+                    geom = row[1]
+                    if geom and geom.area > 0:
+                        feat_rows.append((geom.area, row[0], geom, row[2:]))
+
+            if len(feat_rows) <= 1:
+                print(f'{in_fc} has {len(feat_rows)} feature(s), nested-priority step skipped')
+                return
+
+            feat_rows.sort(key=lambda x: (x[0], x[1]))
+            tmp_fc = in_fc + '_PRIORITY_TMP'
+            if arcpy.Exists(tmp_fc):
+                arcpy.management.Delete(tmp_fc)
+
+            arcpy.management.CreateFeatureclass(
+                out_path=arcpy.env.workspace,
+                out_name=tmp_fc,
+                geometry_type='POLYGON',
+                template=in_fc,
+                spatial_reference=arcpy.Describe(in_fc).spatialReference
+            )
+
+            coverage_geom = None
+            kept_count = 0
+            write_fields = ['SHAPE@'] + attr_fields
+
+            with arcpy.da.InsertCursor(tmp_fc, write_fields) as icursor:
+                for _, oid, geom, attrs in feat_rows:
+                    try:
+                        residual = geom if coverage_geom is None else geom.difference(coverage_geom)
+                    except Exception as e:
+                        print(f'Geometry difference failed for {in_fc} OID {oid}, using original geometry: {e}')
+                        residual = geom
+
+                    if residual and residual.area > min_area_m2:
+                        icursor.insertRow((residual,) + attrs)
+                        kept_count += 1
+                        coverage_geom = residual if coverage_geom is None else coverage_geom.union(residual)
+
+            arcpy.management.Delete(in_fc)
+            arcpy.management.Rename(tmp_fc, in_fc)
+            print(f'Applied nested-priority (small->large) to {in_fc}: kept {kept_count} of {len(feat_rows)} features')
+
+        target_unit_fcs = [named_watershed_file]
+        target_unit_fcs.extend(arcpy.ListFeatureClasses('*_Tributaries'))
+        if wau_watershed_file not in target_unit_fcs:
+            target_unit_fcs.append(wau_watershed_file)
+
+        for fc in target_unit_fcs:
+            if fc == named_watershed_file:
+                print(f'Skipping AOI self-clip for {fc}')
+                continue
+            clip_to_aoi(fc, named_watershed_file)
+
+        for fc in target_unit_fcs:
+            apply_small_first_priority(fc)
 
 
         #Calculate Fields

@@ -36,6 +36,8 @@ import WHPOR_10_Resultant_Outputs as w10
 #User Variable - The only thing that needs to be changed
 OG_WatershedName='Fraser River'
 OG_watershed_key=356364114
+OG_custom_aoi_path=r'H:\WHPOR_Test_Polygon\Polygon.shp'  # Example: r'T:\WHPOR_Temp\Custom_AOI\my_aoi.gdb\AOI'
+OG_AOIName='WHPOR Test Polygon'  # Custom AOI label used for title/file names only when OG_custom_aoi_path is set
 
 
 
@@ -43,20 +45,26 @@ OG_watershed_key=356364114
 year=str(datetime.datetime.today().year)
 # workDir=os.path.join(r'N:\FOR_RNI_RNI_Projects\WHPOR_Watershed_Analysis\1_WHPOR_Analyses',year)
 workDir=r'T:\WHPOR_Temp'
-watershedname=OG_WatershedName.replace(' ','_')
-print(watershedname)
+CustomAOIUsed=OG_custom_aoi_path not in [None, '']
+if CustomAOIUsed and OG_AOIName not in [None, '']:
+    OG_RunName=OG_AOIName
+else:
+    OG_RunName=OG_WatershedName
+
+runname=OG_RunName.replace(' ','_')
+print(runname)
 aprxtemp=r'\\spatialfiles.bcgov\work\for\RNI\RNI\Projects\WHPOR_Watershed_Analysis\working\source_data\WHPOR_APRX_Template_20230713\WHPOR_APRX_Template_20230713.aprx'
 #eventually this will get changed to the N drive
 OG_inputxlslayer=r'T:\WHPOR\Layer_Master.xlsx'
 OG_bcgw_username =input('Enter BCGW user name: ')
 OG_bcgw_password =getpass(prompt='Enter BCGW password: ')
-proj=watershedname # added for testing with temp drive
+proj=runname # added for testing with temp drive
 OG_BaseFolder=os.path.join(workDir,proj)
-check_dir=os.path.join(workDir,watershedname) #str(dircheck)+'_'+ removed from before watershed name for testing with temp drive
+check_dir=os.path.join(workDir,runname) #str(dircheck)+'_'+ removed from before watershed name for testing with temp drive
 sd=os.path.join(OG_BaseFolder,r'1_SpatialData')
 inp=os.path.join(sd,r'1_InputData')
-aprxname=os.path.join(inp,(watershedname+r'.aprx'))
-gdbname=(watershedname+r'.gdb')
+aprxname=os.path.join(inp,(runname+r'.aprx'))
+gdbname=(runname+r'.gdb')
 gdbPath=os.path.join(inp,gdbname)
 
 ''' 
@@ -66,8 +74,8 @@ another way to achieve the
 OG_BaseFolder=check_dir
 sd=os.path.join(OG_BaseFolder,r'1_SpatialData')
 inp=os.path.join(sd,r'1_InputData')
-aprxname=os.path.join(inp,(watershedname+r'.aprx'))
-gdbname=(watershedname+r'.gdb')
+aprxname=os.path.join(inp,(runname+r'.aprx'))
+gdbname=(runname+r'.gdb')
 gdbPath=os.path.join(inp,gdbname)
 
 # Check and create each directory separately
@@ -115,7 +123,7 @@ print('directory tree created')
 #save copy of template in input data and create gdb of watershed name 
 
 if os.path.exists(aprxname):
-    print(watershedname+' APRX exists')
+    print(runname+' APRX exists')
 else:
     aprx=arcpy.mp.ArcGISProject(aprxtemp)
     aprx.saveACopy(aprxname)
@@ -145,19 +153,21 @@ print('====================LET IT RIPPPPPPPPPPPPPPPPPPPPPPPPPP!!!!==============
 print(OG_BaseFolder)
 print(OG_watershed_key)
 print(OG_WatershedName)
+print('Run Name:', OG_RunName)
+print('Custom AOI Used:', CustomAOIUsed)
 
 
 startTime = time.time()
 START_TIME = time.ctime(time.time())
 
-w1.Tribs(OG_WatershedName,OG_watershed_key,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password)
+w1.Tribs(OG_RunName,OG_watershed_key,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password,OG_custom_aoi_path)
 print('=========================================================')
 print('---------------------------------------------------------')
 print('********************SCRIPT 1 COMPLETE********************')
 print('---------------------------------------------------------')
 print('=========================================================')
 s1time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
-w3.DataPrep(OG_WatershedName,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password)
+w3.DataPrep(OG_RunName,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password,OG_custom_aoi_path)
 print('=========================================================')
 print('---------------------------------------------------------')
 print('********************SCRIPT 3 COMPLETE********************')
@@ -165,7 +175,7 @@ print('---------------------------------------------------------')
 print('=========================================================')
 s3time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
 print ('Script 3 complted in: ' + s3time)
-w4.SimplePrep(OG_WatershedName,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password,OG_inputxlslayer)
+w4.SimplePrep(OG_RunName,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password,OG_inputxlslayer)
 print('=========================================================')
 print('---------------------------------------------------------')
 print('********************SCRIPT 4 COMPLETE********************')
@@ -173,7 +183,7 @@ print('---------------------------------------------------------')
 print('=========================================================')
 s4time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
 print ('Script 4 complted in: ' + s4time)
-w5.VRI2_Prep(OG_WatershedName,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password)
+w5.VRI2_Prep(OG_RunName,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password)
 print('=========================================================')
 print('---------------------------------------------------------')
 print('********************SCRIPT 5 COMPLETE********************')
@@ -181,7 +191,7 @@ print('---------------------------------------------------------')
 print('=========================================================')
 s5time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
 print ('Script 5 complted in: ' + s5time)
-w6.VRI2(OG_WatershedName,OG_BaseFolder)
+w6.VRI2(OG_RunName,OG_BaseFolder)
 print('=========================================================')
 print('---------------------------------------------------------')
 print('********************SCRIPT 6 COMPLETE********************')
@@ -189,7 +199,7 @@ print('---------------------------------------------------------')
 print('=========================================================')
 s6time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
 print ('Script 6 complted in: ' + s6time)
-w7.ECA(OG_WatershedName,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password)
+w7.ECA(OG_RunName,OG_BaseFolder,OG_bcgw_username,OG_bcgw_password)
 print('=========================================================')
 print('---------------------------------------------------------')
 print('********************SCRIPT 7 COMPLETE********************')
@@ -197,7 +207,7 @@ print('---------------------------------------------------------')
 print('=========================================================')
 s7time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
 print ('Script 7 complted in: ' + s7time)
-w8.wtrshd_prep(OG_WatershedName,OG_BaseFolder)
+w8.wtrshd_prep(OG_RunName,OG_BaseFolder)
 print('=========================================================')
 print('---------------------------------------------------------')
 print('********************SCRIPT 8 COMPLETE********************')
@@ -205,7 +215,7 @@ print('---------------------------------------------------------')
 print('=========================================================')
 s8time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
 print ('Script 8 complted in: ' + s8time)
-w9.wtrshd_analysis(OG_WatershedName,OG_BaseFolder)
+w9.wtrshd_analysis(OG_RunName,OG_BaseFolder)
 print('=========================================================')
 print('---------------------------------------------------------')
 print('********************SCRIPT 9 COMPLETE********************')
@@ -213,7 +223,7 @@ print('---------------------------------------------------------')
 print('=========================================================')
 s9time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
 print ('Script 9 complted in: ' + s9time)
-w10.Results(OG_WatershedName,OG_BaseFolder)
+w10.Results(OG_RunName,OG_BaseFolder,OG_AOIName,OG_custom_aoi_path)
 print('=========================================================')
 print('---------------------------------------------------------')
 print('********************SCRIPT 10 COMPLETE********************')
