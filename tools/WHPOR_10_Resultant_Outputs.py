@@ -229,6 +229,17 @@ class Results:
             nm_lst=[]
             trib_lst=[]
             wau_lst=[]
+            ordered_columns = [
+                ('OBJECTID', 0), ('Assess_Uni', ''), ('RevRepUni', ''), ('Report_Nam', ''), ('Report_Typ', ''),
+                ('RU_Area_ha', 0), ('RU_Area_km2', 0), ('RU_Area_m2', 0), ('MinElev', 0), ('MaxElev', 0),
+                ('Elev_Relief', 0), ('ALPINE_NF_PERCENT', 0), ('BEC_Score', 0), ('ECA_Score', 0),
+                ('DDR_Length_km', 0), ('DDR_Score', 0), ('Lake_wetland_adjust_ha', 0),
+                ('Lake_wetland_Abscence', 0), ('Terrain_stability_percent', 0), ('GSC_Score', 0),
+                ('Percent_steep_coupled', 0), ('Rds_Extent', 0), ('RdsStrmB_Ext_KM2', 0),
+                ('RdsSlps_Ext_KM2', 0), ('No_Crossings', 0), ('GOS_Score_Percent', 0), ('Logged_PCNT', 0),
+                ('Range_PCNT', 0), ('PrivateIR_PCNT', 0), ('Placer_Score', 0), ('Coal_Lease_PCNT', 0),
+                ('RUN_DATE', '')
+            ]
             for data in data_lst:
                 print(data)
                 df=pd.read_excel(data,sheet_name='Compiled_Watershed_Stats_Table_', header=0 )
@@ -240,24 +251,18 @@ class Results:
                 elif 'WAU' in data:
                     app_lst=wau_lst
 
-                if 'Range_PCNT' not in df.columns:
-                    df['Range_PCNT']=''
-                    df['Range_PCNT']= df['Range_PCNT'].fillna(0, inplace=True)
+                missing_cols = [col for col, _ in ordered_columns if col not in df.columns]
+                if len(missing_cols) > 0:
+                    print('Missing columns in ' + os.path.basename(data) + ': ' + ', '.join(missing_cols))
+                    for col, default_val in ordered_columns:
+                        if col not in df.columns:
+                            df[col] = default_val
 
-                if 'PrivateIR_PCNT' not in df.columns:
-                    df['PrivateIR_PCNT']=''
-                    df['PrivateIR_PCNT']= df['PrivateIR_PCNT'].fillna(0, inplace=True)
-
-                df.fillna(0, inplace=True)
+                fill_defaults = {col: default_val for col, default_val in ordered_columns}
+                df.fillna(value=fill_defaults, inplace=True)
 
                 for i in range (len(df)):
-                    rightorder=[df.loc[i,'OBJECTID'],df.loc[i,'Assess_Uni'],df.loc[i,'RevRepUni'],df.loc[i,'Report_Nam'],df.loc[i,'Report_Typ'],df.loc[i,'RU_Area_ha'],
-                          df.loc[i,'RU_Area_km2'],df.loc[i,'RU_Area_m2'],df.loc[i,'MinElev'],df.loc[i,'MaxElev'],df.loc[i,'Elev_Relief'],df.loc[i,'ALPINE_NF_PERCENT'],
-                          df.loc[i,'BEC_Score'], df.loc[i,'ECA_Score'],df.loc[i,'DDR_Length_km'],df.loc[i,'DDR_Score'],df.loc[i,'Lake_wetland_adjust_ha'],
-                          df.loc[i,'Lake_wetland_Abscence'],df.loc[i,'Terrain_stability_percent'],df.loc[i,'GSC_Score'],df.loc[i,'Percent_steep_coupled'],
-                          df.loc[i,'Rds_Extent'],df.loc[i,'RdsStrmB_Ext_KM2'],df.loc[i,'RdsSlps_Ext_KM2'],df.loc[i,'No_Crossings'],df.loc[i,'GOS_Score_Percent'],
-                          df.loc[i,'Logged_PCNT'],df.loc[i,'Range_PCNT'],df.loc[i,'PrivateIR_PCNT'],df.loc[i,'Placer_Score'],df.loc[i,'Coal_Lease_PCNT'],
-                          df.loc[i,'RUN_DATE']]
+                    rightorder=[df.loc[i,col] for col, _ in ordered_columns]
                     # rightorder=first+second+third+forth+fifth+sixth+seventh+eigth
                     print(rightorder)
                     app_lst.append(rightorder)
@@ -317,6 +322,13 @@ class Results:
         def rejoin (inp):
             arcpy.env.workspace =inp
             arcpy.env.overwriteOutput = True
+            # Keep joined field names unqualified (e.g. ECA_Rank instead of
+            # tmp_xls_named_ECA_Rank) so the .aprx layer symbology that references
+            # short field names continues to render after CopyFeatures persists
+            # the join. The previous OLEDB-based code relied on a later AlterField
+            # step in maps() to clean prefixes; staging via a gdb table changes
+            # the prefix, so we disable qualification here instead.
+            arcpy.env.qualifiedFieldNames = False
             nmw_list=arcpy.ListFeatureClasses('*Named*') or []
             tribw_list=arcpy.ListFeatureClasses('*Tributaries*') or []
             wauw_list=arcpy.ListFeatureClasses('*WAU*') or []
@@ -338,9 +350,36 @@ class Results:
             print(wauw)
             unq='RevRepUni'
             print(today)
-            nmsht=os.path.join(report_out,r'T_Named_Watershed$_')
-            trbsht=os.path.join(report_out,r'T_Tributary_Watersheds$_')
-            wausht=os.path.join(report_out,r'T_Watershed_Assessment_Units$_')
+
+            # Stage xlsx sheets into the file gdb so joins do not depend on the
+            # Microsoft Access Database Engine (ACE OLEDB) driver. Previously the
+            # code addressed sheets directly inside the .xlsx (e.g. T_Named_Watershed$_)
+            # which requires ACE OLEDB to be installed on the machine running arcpy.
+            # On environments without that driver (e.g. some VDI images),
+            # arcpy.ListTables() on the .xlsx returns [] and ValidateJoin fails with
+            # ERROR 000732 ... does not exist or is not supported.
+            staged_sheets = {
+                'Named Watershed':            'tmp_xls_named',
+                'Tributary Watersheds':       'tmp_xls_tribs',
+                'Watershed Assessment Units': 'tmp_xls_wau',
+            }
+            for sheet_name_local, tbl_name_local in staged_sheets.items():
+                staged_path = os.path.join(inp, tbl_name_local)
+                if arcpy.Exists(staged_path):
+                    arcpy.management.Delete(staged_path)
+                try:
+                    arcpy.conversion.ExcelToTable(
+                        Input_Excel_File=report_out,
+                        Output_Table=staged_path,
+                        Sheet=sheet_name_local,
+                    )
+                    print('Staged xlsx sheet to gdb table:', sheet_name_local, '->', tbl_name_local)
+                except Exception as stage_e:
+                    print('Failed to stage xlsx sheet', sheet_name_local, ':', stage_e)
+
+            nmsht  = os.path.join(inp, staged_sheets['Named Watershed'])
+            trbsht = os.path.join(inp, staged_sheets['Tributary Watersheds'])
+            wausht = os.path.join(inp, staged_sheets['Watershed Assessment Units'])
 
             print(nmsht)
             if nmw and arcpy.Exists(nmw):
@@ -394,6 +433,14 @@ class Results:
                 arcpy.management.Delete(waudel[0])
             for a in aois:
                 arcpy.management.Delete(a)
+            # Clean up the temporary xlsx-staged gdb tables.
+            for _tbl in ('tmp_xls_named', 'tmp_xls_tribs', 'tmp_xls_wau'):
+                _tbl_path = os.path.join(inp, _tbl)
+                if arcpy.Exists(_tbl_path):
+                    try:
+                        arcpy.management.Delete(_tbl_path)
+                    except Exception:
+                        pass
             print('REJOIN, FINAL Feature class Created')
 
         def maps(proProj):
