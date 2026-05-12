@@ -76,6 +76,57 @@ class Tribs:
             tributary_stream_file = 'Tributary_Stream_Network'
             aoi_streams_file = named_watershed.replace(' ', '_') + '_AOI_Stream_Network'
 
+            def select_mainstem_streams(in_stream_fc, out_stream_fc):
+                order_field_local = None
+                for fld in arcpy.ListFields(in_stream_fc):
+                    upper_name = fld.name.upper()
+                    if upper_name == 'STREAM_ORDER' or ('STREAM' in upper_name and 'ORDER' in upper_name):
+                        order_field_local = fld.name
+                        break
+
+                if order_field_local:
+                    with arcpy.da.SearchCursor(in_stream_fc, [order_field_local]) as cursor:
+                        order_values = [row[0] for row in cursor if row[0] is not None]
+
+                    if len(order_values) > 0:
+                        max_order_local = max(order_values)
+                        fld_delim = arcpy.AddFieldDelimiters(current_workspace, order_field_local)
+                        if isinstance(max_order_local, str):
+                            main_query = f"{fld_delim} = '{max_order_local}'"
+                        else:
+                            main_query = f"{fld_delim} = {max_order_local}"
+
+                        arcpy.conversion.FeatureClassToFeatureClass(
+                            in_features=in_stream_fc,
+                            out_path=current_workspace,
+                            out_name=out_stream_fc,
+                            where_clause=main_query
+                        )
+                        return int(arcpy.management.GetCount(out_stream_fc)[0])
+
+                oid_field_local = arcpy.Describe(in_stream_fc).OIDFieldName
+                longest_oid_local = None
+                longest_len_local = -1
+                with arcpy.da.SearchCursor(in_stream_fc, [oid_field_local, 'SHAPE@LENGTH']) as cursor:
+                    for row in cursor:
+                        if row[1] is not None and row[1] > longest_len_local:
+                            longest_len_local = row[1]
+                            longest_oid_local = row[0]
+
+                if longest_oid_local is not None:
+                    oid_delim = arcpy.AddFieldDelimiters(current_workspace, oid_field_local)
+                    main_query = f"{oid_delim} = {longest_oid_local}"
+                    arcpy.conversion.FeatureClassToFeatureClass(
+                        in_features=in_stream_fc,
+                        out_path=current_workspace,
+                        out_name=out_stream_fc,
+                        where_clause=main_query
+                    )
+                    return int(arcpy.management.GetCount(out_stream_fc)[0])
+
+                arcpy.management.CopyFeatures(in_stream_fc, out_stream_fc)
+                return int(arcpy.management.GetCount(out_stream_fc)[0])
+
             if arcpy.Exists(named_watershed_file):
                 arcpy.management.Delete(named_watershed_file)
 
@@ -154,57 +205,76 @@ class Tribs:
             if stream_count == 0:
                 raise RuntimeError('No streams found intersecting custom AOI. Cannot build tributary trace products.')
 
-            order_field = None
-            for fld in arcpy.ListFields(aoi_streams_file):
-                upper_name = fld.name.upper()
-                if upper_name == 'STREAM_ORDER' or ('STREAM' in upper_name and 'ORDER' in upper_name):
-                    order_field = fld.name
-                    break
+            if arcpy.Exists(named_watershed_stream_file):
+                arcpy.management.Delete(named_watershed_stream_file)
 
-            max_order = None
-            if order_field:
-                with arcpy.da.SearchCursor(aoi_streams_file, [order_field]) as cursor:
-                    order_values = [row[0] for row in cursor if row[0] is not None]
-                if len(order_values) > 0:
-                    max_order = max(order_values)
+            arcpy.management.CreateFeatureclass(
+                out_path=current_workspace,
+                out_name=named_watershed_stream_file,
+                geometry_type='POLYLINE',
+                template=aoi_streams_file,
+                spatial_reference=arcpy.Describe(aoi_streams_file).spatialReference
+            )
 
-            if order_field and max_order is not None:
-                fld_delim = arcpy.AddFieldDelimiters(current_workspace, order_field)
-                if isinstance(max_order, str):
-                    main_query = f"{fld_delim} = '{max_order}'"
-                else:
-                    main_query = f"{fld_delim} = {max_order}"
+            named_oid_field = arcpy.Describe(named_watershed_file).OIDFieldName
+            named_oid_delim = arcpy.AddFieldDelimiters(current_workspace, named_oid_field)
+            per_ws_mainstem_count = 0
 
-                arcpy.conversion.FeatureClassToFeatureClass(
-                    in_features=aoi_streams_file,
-                    out_path=current_workspace,
-                    out_name=named_watershed_stream_file,
-                    where_clause=main_query
-                )
-                print('Custom AOI mainstem selected from highest stream order:', max_order)
-            else:
-                oid_field = arcpy.Describe(aoi_streams_file).OIDFieldName
-                longest_oid = None
-                longest_len = -1
-                with arcpy.da.SearchCursor(aoi_streams_file, [oid_field, 'SHAPE@LENGTH']) as cursor:
-                    for row in cursor:
-                        if row[1] is not None and row[1] > longest_len:
-                            longest_len = row[1]
-                            longest_oid = row[0]
+            arcpy.management.MakeFeatureLayer(named_watershed_file, 'named_ws_lyr')
+            arcpy.management.MakeFeatureLayer(aoi_streams_file, 'aoi_streams_lyr')
 
-                if longest_oid is not None:
-                    oid_delim = arcpy.AddFieldDelimiters(current_workspace, oid_field)
-                    main_query = f"{oid_delim} = {longest_oid}"
-                    arcpy.conversion.FeatureClassToFeatureClass(
-                        in_features=aoi_streams_file,
-                        out_path=current_workspace,
-                        out_name=named_watershed_stream_file,
-                        where_clause=main_query
+            try:
+                named_oid_values = [row[0] for row in arcpy.da.SearchCursor(named_watershed_file, [named_oid_field])]
+                for ws_oid in named_oid_values:
+                    arcpy.management.SelectLayerByAttribute('named_ws_lyr', 'NEW_SELECTION', f"{named_oid_delim} = {ws_oid}")
+                    local_stream_sel = arcpy.management.SelectLayerByLocation(
+                        in_layer='aoi_streams_lyr',
+                        overlap_type='INTERSECT',
+                        select_features='named_ws_lyr',
+                        selection_type='NEW_SELECTION'
                     )
-                    print('STREAM_ORDER not found. Using longest stream segment as mainstem proxy.')
-                else:
-                    arcpy.management.CopyFeatures(aoi_streams_file, named_watershed_stream_file)
-                    print('STREAM_ORDER not found and no stream lengths available. Using all AOI streams as named stream network.')
+
+                    local_stream_count = int(arcpy.management.GetCount(local_stream_sel)[0])
+                    if local_stream_count == 0:
+                        continue
+
+                    local_stream_fc = f'AOI_Local_Streams_{ws_oid}'
+                    local_main_fc = f'AOI_Local_Main_{ws_oid}'
+
+                    for local_nm in [local_stream_fc, local_main_fc]:
+                        if arcpy.Exists(local_nm):
+                            arcpy.management.Delete(local_nm)
+
+                    arcpy.conversion.FeatureClassToFeatureClass(
+                        in_features=local_stream_sel,
+                        out_path=current_workspace,
+                        out_name=local_stream_fc
+                    )
+
+                    local_main_count = select_mainstem_streams(local_stream_fc, local_main_fc)
+                    if local_main_count > 0:
+                        arcpy.management.Append(local_main_fc, named_watershed_stream_file, 'NO_TEST')
+                        per_ws_mainstem_count = per_ws_mainstem_count + local_main_count
+
+                    for local_nm in [local_stream_fc, local_main_fc]:
+                        if arcpy.Exists(local_nm):
+                            arcpy.management.Delete(local_nm)
+
+                arcpy.management.SelectLayerByAttribute('named_ws_lyr', 'CLEAR_SELECTION')
+                arcpy.management.SelectLayerByAttribute('aoi_streams_lyr', 'CLEAR_SELECTION')
+            finally:
+                if arcpy.Exists('named_ws_lyr'):
+                    arcpy.management.Delete('named_ws_lyr')
+                if arcpy.Exists('aoi_streams_lyr'):
+                    arcpy.management.Delete('aoi_streams_lyr')
+
+            if per_ws_mainstem_count > 0:
+                print('Custom AOI mainstem built per intersecting named watershed segments:', per_ws_mainstem_count)
+            else:
+                print('No per-watershed mainstem segments found. Falling back to AOI-wide mainstem selection.')
+                if arcpy.Exists(named_watershed_stream_file):
+                    arcpy.management.Delete(named_watershed_stream_file)
+                select_mainstem_streams(aoi_streams_file, named_watershed_stream_file)
 
             main_count = int(arcpy.management.GetCount(named_watershed_stream_file)[0])
             if main_count == 0:
@@ -382,20 +452,39 @@ class Tribs:
             print(int(arcpy.GetCount_management(TL)[0]))
 
             TL_out='trace_lines_out'
-            #saptial join attributes from stream network, watershed key is needed for the trib
-            arcpy.analysis.SpatialJoin(TL, 'Tributary_Stream_Network',TL_out)
+            if arcpy.Exists('watersheds_trib'):
+                arcpy.management.Delete('watersheds_trib')
 
+            if custom_aoi_path not in [None, '']:
+                # Mirror standard mode: join trace lines to tributary stream network to get
+                # stream-level WATERSHED_KEY, then join watersheds to that result.
+                # Joining watersheds directly to trace_lines assigns each tiny FWA polygon
+                # its own key, producing fragmented output.
+                if arcpy.Exists(TL_out):
+                    arcpy.management.Delete(TL_out)
+                arcpy.analysis.SpatialJoin(TL, 'Tributary_Stream_Network', TL_out)
 
-            arcpy.management.AddField(TL_out, 'Tributary', 'DOUBLE')
-            WK=arcpy.ListFields(TL_out, '*WATERSHED_KEY*')[0]
-            print(WK.name)
-            arcpy.management.CalculateField(TL_out, 'Tributary','!WATERSHED_KEY!', 'PYTHON3' )
-            
-        
-            print('tributary calculated')
-            
-            arcpy.analysis.SpatialJoin(watersheds_file,TL_out,'watersheds_trib' )
-            print('spatial join tribs')
+                arcpy.management.AddField(TL_out, 'Tributary', 'DOUBLE')
+                WK = arcpy.ListFields(TL_out, '*WATERSHED_KEY*')[0]
+                print(WK.name)
+                arcpy.management.CalculateField(TL_out, 'Tributary', f'!{WK.name}!', 'PYTHON3')
+
+                print('tributary calculated from stream-level watershed key (custom AOI mode)')
+                arcpy.analysis.SpatialJoin(watersheds_file, TL_out, 'watersheds_trib')
+            else:
+                #saptial join attributes from stream network, watershed key is needed for the trib
+                if arcpy.Exists(TL_out):
+                    arcpy.management.Delete(TL_out)
+                arcpy.analysis.SpatialJoin(TL, 'Tributary_Stream_Network',TL_out)
+
+                arcpy.management.AddField(TL_out, 'Tributary', 'DOUBLE')
+                WK=arcpy.ListFields(TL_out, '*WATERSHED_KEY*')[0]
+                print(WK.name)
+                arcpy.management.CalculateField(TL_out, 'Tributary','!WATERSHED_KEY!', 'PYTHON3' )
+
+                print('tributary calculated')
+                arcpy.analysis.SpatialJoin(watersheds_file,TL_out,'watersheds_trib' )
+                print('spatial join tribs')
 
             nmd_str=named_watershed.replace(' ', '_')+'_Stream_Network'
 
