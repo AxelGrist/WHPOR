@@ -146,7 +146,8 @@ foldic=[{'connectionString':inp,'alias':'1_InputData','isHomeFolder':True},{'con
 aprx.updateFolderConnections(foldic,True)
 #set defualt home folder to spatial data folder 
 aprx.homeFolder=sd
-aprx.save
+aprx.save()
+del aprx
 print('aprx saved')
 
 print('====================LET IT RIPPPPPPPPPPPPPPPPPPPPPPPPPP!!!!====================')

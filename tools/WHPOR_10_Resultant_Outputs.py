@@ -534,8 +534,6 @@ class Results:
                             'workspace_factory': 'File Geodatabase'}
                     l.updateConnectionProperties(origConnPropDict, newConnPropDict)
                     print(l)
-                print(f"Attempting to save .aprx file at: {aprx.filePath}")
-                aprx.save()
 
             # update xing connection properties 
             origConnPropDict = xing_den_map_lyrs[0].connectionProperties
@@ -545,8 +543,6 @@ class Results:
             xing_den_map_lyrs[0].updateConnectionProperties(origConnPropDict, newConnPropDict)
 
             print('WAU watershed connections changed')
-            print(f"Attempting to save .aprx file at: {aprx.filePath}")
-            aprx.save()
 
             #set map elemnts
             lyout=aprx.listLayouts('WHPOR Results Map')[0]
@@ -904,14 +900,11 @@ class Results:
                 print('Map frame scale re-applied before export:', int(mfrm.camera.scale))
             except Exception as e:
                 print('Map frame scale re-apply skipped:', e)
-            print(f"Attempting to save .aprx file at: {aprx.filePath}")
-            aprx.save()  
+            aprx.save()
             print('Scale Bar Adjusted')
             print('export map')
             lyout.exportToPDF(mapout)
             print('Layout exported to ', mapout)
-            print(f"Attempting to save .aprx file at: {aprx.filePath}")
-            aprx.save()  
 
         def copDevs(final_location):
             if not os.path.exists(final_location):
