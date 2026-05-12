@@ -176,7 +176,12 @@ class RecoverResults:
             print('Title updated')
 
             # Zoom to watershed AOI
-            unq1 = [f.name for f in arcpy.ListFields(named_map_lyrs[0], '*RevRepuni')][0]
+            # Use the FC name from rsltlst rather than the layer object so the field
+            # lookup works against the actual on-disk schema after connection update.
+            unq1_candidates = [f.name for f in arcpy.ListFields(rsltlst[0], '*RevRepuni')]
+            if len(unq1_candidates) == 0:
+                unq1_candidates = [f.name for f in arcpy.ListFields(rsltlst[0]) if 'revrepuni' in f.name.lower()]
+            unq1 = unq1_candidates[0] if unq1_candidates else 'RevRepUni'
             exprs = unq1 + ' IS NOT NULL'
             arcpy.management.SelectLayerByAttribute(named_map_lyrs[0], 'NEW_SELECTION', exprs)
             mfrm.camera.setExtent(mfrm.getLayerExtent(named_map_lyrs[0]))
