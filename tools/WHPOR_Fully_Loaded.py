@@ -29,6 +29,7 @@ import WHPOR_07_ECA as w7
 import WHPOR_08_Watershed_Analysis_Prep as w8
 import WHPOR_09_CEA_watershed_analysis as w9
 import WHPOR_10_Resultant_Outputs as w10
+import WHPOR_11_forDRAT as w11
 
 
 
@@ -224,6 +225,14 @@ print('---------------------------------------------------------')
 print('=========================================================')
 s9time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
 print ('Script 9 complted in: ' + s9time)
+w11.ForDRAT(OG_RunName,OG_BaseFolder)
+print('=========================================================')
+print('---------------------------------------------------------')
+print('********************SCRIPT 11 COMPLETE********************')
+print('---------------------------------------------------------')
+print('=========================================================')
+s11time = time.strftime("%H:%M:%S", time.gmtime(time.time() - startTime))
+print ('Script 11 complted in: ' + s11time)
 w10.Results(OG_RunName,OG_BaseFolder,OG_AOIName,OG_custom_aoi_path)
 print('=========================================================')
 print('---------------------------------------------------------')
@@ -244,6 +253,7 @@ print ('Script 6 complted in: ' + s6time)
 print ('Script 7 complted in: ' + s7time)
 print ('Script 8 complted in: ' + s8time)
 print ('Script 9 complted in: ' + s9time)
+print ('Script 11 complted in: '+ s11time)
 print ('Script 10 complted in: '+ s10time)
 print ('The WHPOR Took ' + totalTime + ' to run.')
 

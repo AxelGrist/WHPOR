@@ -232,7 +232,9 @@ class Results:
             ordered_columns = [
                 ('OBJECTID', 0), ('Assess_Uni', ''), ('RevRepUni', ''), ('Report_Nam', ''), ('Report_Typ', ''),
                 ('RU_Area_ha', 0), ('RU_Area_km2', 0), ('RU_Area_m2', 0), ('MinElev', 0), ('MaxElev', 0),
-                ('Elev_Relief', 0), ('ALPINE_NF_PERCENT', 0), ('BEC_Score', 0), ('ECA_Score', 0),
+                ('Elev_Relief', 0), ('ALPINE_NF_PERCENT', 0), ('BEC_Score', 0),
+                ('Drought_Risk_Score_2050', 0), ('Drought_Risk_Class_2050', ''),
+                ('ECA_Score', 0),
                 ('DDR_Length_km', 0), ('DDR_Score', 0), ('Lake_wetland_adjust_ha', 0),
                 ('Lake_wetland_Abscence', 0), ('Terrain_stability_percent', 0), ('GSC_Score', 0),
                 ('Percent_steep_coupled', 0), ('Rds_Extent', 0), ('RdsStrmB_Ext_KM2', 0),
@@ -524,6 +526,21 @@ class Results:
                 for (fn, og) in zip (field_names, og_f_name):
                     arcpy.management.AlterField(in_table=fc, field=og, new_field_name=fn, new_field_alias=fn)
                     print('field altered')
+
+                # Standardize forDRAT drought risk field names (may carry a prefix after rejoin).
+                # Wrapped in try/except so runs without forDRAT output still succeed.
+                drought_flds = ['Drought_Risk_Score_2050', 'Drought_Risk_Class_2050']
+                for dfld in drought_flds:
+                    try:
+                        match = arcpy.ListFields(fc, '*' + dfld)
+                        if match and match[0].name != dfld:
+                            arcpy.management.AlterField(
+                                in_table=fc, field=match[0].name,
+                                new_field_name=dfld, new_field_alias=dfld
+                            )
+                            print(f'forDRAT field standardized: {match[0].name} -> {dfld}')
+                    except Exception as _e:
+                        print(f'forDRAT AlterField skipped for {dfld}: {_e}')
                
             for (lyrs,nm) in zip (changelst,rsltlst):
                 print(nm)
@@ -543,6 +560,32 @@ class Results:
             xing_den_map_lyrs[0].updateConnectionProperties(origConnPropDict, newConnPropDict)
 
             print('WAU watershed connections changed')
+
+            # ── Update forDRAT drought risk layer data sources (optional layers) ──
+            # Add layers named "Drought Risk Named Watershed", "Drought Risk Tributaries",
+            # and "Drought Risk WAU" to the .aprx template to enable this block.
+            # Each drought layer uses the same compiled FC as the corresponding hazard layer
+            # since Drought_Risk_Class_2050 is joined into those FCs by WHPOR_11_forDRAT.
+            drought_layer_pairs = [
+                (rslt_map.listLayers('*Drought*Named*'),    rslt_name  if 'rslt_name'  in dir() else None),
+                (rslt_map.listLayers('*Drought*Trib*'),     rslt_trib  if 'rslt_trib'  in dir() else None),
+                (rslt_map.listLayers('*Drought*WAU*'),      rslt_wau   if 'rslt_wau'   in dir() else None),
+            ]
+            for drought_lyrs, fc_name in drought_layer_pairs:
+                if not drought_lyrs or not fc_name:
+                    continue
+                for dl in drought_lyrs:
+                    try:
+                        orig = dl.connectionProperties
+                        dl.updateConnectionProperties(
+                            orig,
+                            {'connection_info': {'database': outrslt},
+                             'dataset': fc_name,
+                             'workspace_factory': 'File Geodatabase'}
+                        )
+                        print(f'Drought risk layer updated: {dl.name} → {fc_name}')
+                    except Exception as _e:
+                        print(f'Drought risk layer update skipped for {dl.name}: {_e}')
 
             #set map elemnts
             lyout=aprx.listLayouts('WHPOR Results Map')[0]
