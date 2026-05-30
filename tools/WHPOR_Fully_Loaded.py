@@ -128,6 +128,7 @@ if os.path.exists(aprxname):
 else:
     aprx=arcpy.mp.ArcGISProject(aprxtemp)
     aprx.saveACopy(aprxname)
+    del aprx  # release template handle before opening copy
     print('copying APRX template and renaming')
 
 aprx=arcpy.mp.ArcGISProject(aprxname)
@@ -138,7 +139,6 @@ else:
     print('no gdb, creating....')
     arcpy.management.CreateFileGDB(inp, gdbname)
     print(gdbname)
-aprx = arcpy.mp.ArcGISProject(aprxname)
 print(aprx)
 print(aprxname)
 
