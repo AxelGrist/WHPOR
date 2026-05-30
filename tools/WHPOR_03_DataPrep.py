@@ -112,9 +112,11 @@ class DataPrep:
             code_join_list = []
 
             for code in code_split_list:
-                clean_code = str(code).strip()
-                if clean_code not in ['', '0']:
-                    code_join_list.append(clean_code)
+                try:
+                    if int(code) != 0:
+                        code_join_list.append(code)
+                except ValueError:
+                    pass
 
             if len(code_join_list) > 0:
                 code_string = '-'.join(code_join_list)
@@ -253,8 +255,12 @@ class DataPrep:
                 continue
             clip_to_aoi(fc, named_watershed_file)
 
-        for fc in target_unit_fcs:
-            apply_small_first_priority(fc)
+        # apply_small_first_priority is only needed for custom AOI mode where
+        # FWA_ASSESSMENT_WATERSHEDS_POLY may include overlapping hierarchy levels.
+        # For named watershed mode the FWA code query returns non-overlapping units.
+        if custom_aoi_mode:
+            for fc in target_unit_fcs:
+                apply_small_first_priority(fc)
 
 
         #Calculate Fields

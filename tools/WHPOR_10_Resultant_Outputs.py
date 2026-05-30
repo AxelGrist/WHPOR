@@ -553,7 +553,12 @@ class Results:
             print('Title updated')
 
             #zoom to watershed AOI
-            unq1=[f.name for f in arcpy.ListFields(named_map_lyrs[0],'*RevRepuni')][0]
+            # Use the FC directly for field lookup (avoids stale layer schema cache after
+            # updateConnectionProperties). Selection/extent use named_map_lyrs[0] as before.
+            unq1_candidates=[f.name for f in arcpy.ListFields(rslt_name,'*RevRepuni')]
+            if len(unq1_candidates)==0:
+                unq1_candidates=[f.name for f in arcpy.ListFields(rslt_name) if 'revrepuni' in f.name.lower()]
+            unq1=unq1_candidates[0] if unq1_candidates else 'RevRepUni'
             exprs=unq1+' IS NOT NULL'
             arcpy.management.SelectLayerByAttribute(named_map_lyrs[0],'NEW_SELECTION',exprs)
             # print(arcpy.management.GetCount(named_map_lyrs[0]))
@@ -900,7 +905,14 @@ class Results:
                 print('Map frame scale re-applied before export:', int(mfrm.camera.scale))
             except Exception as e:
                 print('Map frame scale re-apply skipped:', e)
-            aprx.save()
+            try:
+                print(f"Attempting to save .aprx file at: {aprx.filePath}")
+                aprx.save()
+            except OSError as e:
+                backup_path = aprx.filePath.replace('.aprx', f'_backup_{today}.aprx')
+                print(f"Save failed, attempting saveACopy to: {backup_path}")
+                aprx.saveACopy(backup_path)
+                print(f"Saved copy to: {backup_path}")
             print('Scale Bar Adjusted')
             print('export map')
             lyout.exportToPDF(mapout)
