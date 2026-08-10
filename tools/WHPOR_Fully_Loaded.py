@@ -45,7 +45,10 @@ OG_AOIName='WHPOR Test Polygon'  # Custom AOI label used for title/file names on
 #Static Variables- Don't Touch unless you absolutely have to, like to change the APRX template, wokring directory or input xlsx's
 year=str(datetime.datetime.today().year)
 # workDir=os.path.join(r'N:\FOR_RNI_RNI_Projects\WHPOR_Watershed_Analysis\1_WHPOR_Analyses',year)
-workDir=r'T:\WHPOR_Temp'
+workDir=os.environ.get(
+    'WHPOR_RUN_ROOT',
+    r'T:\WHPOR_Temp'
+)
 CustomAOIUsed=OG_custom_aoi_path not in [None, '']
 if CustomAOIUsed and OG_AOIName not in [None, '']:
     OG_RunName=OG_AOIName
