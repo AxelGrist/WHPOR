@@ -24,6 +24,7 @@ import openpyxl as opxl
 import datetime
 import math 
 import sys
+import zipfile
 import win32com.client as win32
 
 class Results:
@@ -46,6 +47,10 @@ class Results:
         outputlabel=OutputLabel.replace(' ','_')
         today=datetime.datetime.today().strftime(r'%Y%m%d')
         year=str(datetime.datetime.today().year)
+        whpor_archive_root=os.environ.get(
+            'WHPOR_ARCHIVE_ROOT',
+            r'W:\FOR\RNI\RNI\Projects\WHPOR_Watershed_Analysis\runs'
+        )
         unq_fol=BaseFolder.split("\\")[-1]
         rsltGdb=os.path.join(BaseFolder,r'1_SpatialData\4_CEA_Watershed_Analysis\Ouput\Compiled_Watershed_Hazard_Summaries_rw.gdb')
         outrslt=os.path.join(BaseFolder,r'1_SpatialData\3_ResultantData\Compiled_Watershed_Hazard_Summaries_rw.gdb')
@@ -232,7 +237,10 @@ class Results:
             ordered_columns = [
                 ('OBJECTID', 0), ('Assess_Uni', ''), ('RevRepUni', ''), ('Report_Nam', ''), ('Report_Typ', ''),
                 ('RU_Area_ha', 0), ('RU_Area_km2', 0), ('RU_Area_m2', 0), ('MinElev', 0), ('MaxElev', 0),
-                ('Elev_Relief', 0), ('ALPINE_NF_PERCENT', 0), ('BEC_Score', 0), ('ECA_Score', 0),
+                ('Elev_Relief', 0), ('ALPINE_NF_PERCENT', 0), ('BEC_Score', 0),
+                ('Drought_Risk_Score_2050', 0), ('Drought_Risk_Class_2050', ''),
+                ('Drought_Risk_Coverage_2050', 0),
+                ('ECA_Score', 0),
                 ('DDR_Length_km', 0), ('DDR_Score', 0), ('Lake_wetland_adjust_ha', 0),
                 ('Lake_wetland_Abscence', 0), ('Terrain_stability_percent', 0), ('GSC_Score', 0),
                 ('Percent_steep_coupled', 0), ('Rds_Extent', 0), ('RdsStrmB_Ext_KM2', 0),
@@ -524,6 +532,21 @@ class Results:
                 for (fn, og) in zip (field_names, og_f_name):
                     arcpy.management.AlterField(in_table=fc, field=og, new_field_name=fn, new_field_alias=fn)
                     print('field altered')
+
+                # Standardize forDRAT drought risk field names (may carry a prefix after rejoin).
+                # Wrapped in try/except so runs without forDRAT output still succeed.
+                drought_flds = ['Drought_Risk_Score_2050', 'Drought_Risk_Class_2050']
+                for dfld in drought_flds:
+                    try:
+                        match = arcpy.ListFields(fc, '*' + dfld)
+                        if match and match[0].name != dfld:
+                            arcpy.management.AlterField(
+                                in_table=fc, field=match[0].name,
+                                new_field_name=dfld, new_field_alias=dfld
+                            )
+                            print(f'forDRAT field standardized: {match[0].name} -> {dfld}')
+                    except Exception as _e:
+                        print(f'forDRAT AlterField skipped for {dfld}: {_e}')
                
             for (lyrs,nm) in zip (changelst,rsltlst):
                 print(nm)
@@ -543,6 +566,32 @@ class Results:
             xing_den_map_lyrs[0].updateConnectionProperties(origConnPropDict, newConnPropDict)
 
             print('WAU watershed connections changed')
+
+            # ── Update forDRAT drought risk layer data sources (optional layers) ──
+            # Add layers named "Drought Risk Named Watershed", "Drought Risk Tributaries",
+            # and "Drought Risk WAU" to the .aprx template to enable this block.
+            # Each drought layer uses the same compiled FC as the corresponding hazard layer
+            # since Drought_Risk_Class_2050 is joined into those FCs by WHPOR_11_forDRAT.
+            drought_layer_pairs = [
+                (rslt_map.listLayers('*Drought*Named*'),    rslt_name  if 'rslt_name'  in dir() else None),
+                (rslt_map.listLayers('*Drought*Trib*'),     rslt_trib  if 'rslt_trib'  in dir() else None),
+                (rslt_map.listLayers('*Drought*WAU*'),      rslt_wau   if 'rslt_wau'   in dir() else None),
+            ]
+            for drought_lyrs, fc_name in drought_layer_pairs:
+                if not drought_lyrs or not fc_name:
+                    continue
+                for dl in drought_lyrs:
+                    try:
+                        orig = dl.connectionProperties
+                        dl.updateConnectionProperties(
+                            orig,
+                            {'connection_info': {'database': outrslt},
+                             'dataset': fc_name,
+                             'workspace_factory': 'File Geodatabase'}
+                        )
+                        print(f'Drought risk layer updated: {dl.name} → {fc_name}')
+                    except Exception as _e:
+                        print(f'Drought risk layer update skipped for {dl.name}: {_e}')
 
             #set map elemnts
             lyout=aprx.listLayouts('WHPOR Results Map')[0]
@@ -914,6 +963,20 @@ class Results:
                 aprx.saveACopy(backup_path)
                 print(f"Saved copy to: {backup_path}")
             print('Scale Bar Adjusted')
+            # Safeguard: clear any lingering feature selections before export so a
+            # stale selection highlight (e.g. from an earlier errored/partial run)
+            # cannot be baked into the exported PDF. This only removes selection
+            # graphics; it does not affect the already-computed camera extent,
+            # scale, or scale bar layout.
+            try:
+                for _lyr in rslt_map.listLayers():
+                    try:
+                        if _lyr.isFeatureLayer:
+                            arcpy.SelectLayerByAttribute_management(_lyr, "CLEAR_SELECTION")
+                    except Exception:
+                        pass
+            except Exception as _e:
+                print('clear-selection safeguard skipped:', _e)
             print('export map')
             lyout.exportToPDF(mapout)
             print('Layout exported to ', mapout)
@@ -947,11 +1010,71 @@ class Results:
             print('==========================================================================================================================================================================================')
             print('****************FINAL DELIVERABLES****************FINAL DELIVERABLES****************FINAL DELIVERABLES****************FINAL DELIVERABLES****************FINAL DELIVERABLES****************')
             print('==========================================================================================================================================================================================')
+
+        def archive_run_folder_to_year_folder(run_folder):
+            """Zip full run folder to WHPOR root/current-year folder."""
+            year_folder = os.path.join(whpor_archive_root, year)
+
+            if not os.path.exists(run_folder):
+                print('Archive step skipped: run folder not found ->', run_folder)
+                return
+
+            if not os.path.exists(year_folder):
+                os.makedirs(year_folder)
+                print('Created year folder for archive:', year_folder)
+
+            print('Archive root in use:', whpor_archive_root)
+
+            # Zip naming: <run_folder_name>_YYYYMMDD.zip (overwrite same-day run).
+            zip_base_name = os.path.basename(run_folder.rstrip('\\/')) + '_' + today
+            zip_without_ext = os.path.join(year_folder, zip_base_name)
+            zip_path = zip_without_ext + '.zip'
+
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+
+            skipped_locks = 0
+            skipped_denied = 0
+
+            def _walk_error(err):
+                # Keep archive creation moving if a subfolder cannot be read.
+                print('Archive walk warning:', err)
+
+            with zipfile.ZipFile(zip_path, mode='w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+                for root, dirs, files in os.walk(run_folder, onerror=_walk_error):
+                    for fname in files:
+                        src = os.path.join(root, fname)
+                        arcname = os.path.relpath(src, os.path.dirname(run_folder))
+
+                        # ArcGIS/FileGDB lock artifacts are ephemeral and may be unreadable.
+                        if fname.lower().endswith('.lock'):
+                            skipped_locks += 1
+                            continue
+
+                        try:
+                            zf.write(src, arcname)
+                        except PermissionError:
+                            skipped_denied += 1
+                        except OSError as ex:
+                            if 'permission denied' in str(ex).lower():
+                                skipped_denied += 1
+                            else:
+                                raise
+
+            print('Run folder archived to:', zip_path)
+            if skipped_locks > 0:
+                print('Archive note: skipped lock files:', skipped_locks)
+            if skipped_denied > 0:
+                print('Archive note: skipped permission-denied files:', skipped_denied)
+
         #=====Call Functions=====
         move_CEA(rsltGdb)
         xing_eca (outrslt,inputgdb)
         build_xlsx(rprtFolder) 
         rejoin(outrslt)
         maps(aprxtemp)
-        copDevs(clientdir)
+        try:
+            archive_run_folder_to_year_folder(BaseFolder)
+        except Exception as archive_err:
+            print('Archive step failed:', archive_err)
 
